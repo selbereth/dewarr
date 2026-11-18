@@ -767,6 +767,10 @@ class QbitClient:
         fields = {
             "tags": tag,
             "category": category,
+            # Dewarr compares the client's file list with the torrent's own paths. A client
+            # default of "Subfolder" would wrap a single-file torrent in a new folder and
+            # the completed files would no longer match the inspected torrent.
+            "contentLayout": "Original",
         }
         if stopped:
             fields["stopped"] = "true"
