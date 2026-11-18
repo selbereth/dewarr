@@ -158,6 +158,7 @@ async def test_submission_and_independent_confirmation_use_one_session_and_exact
         "urls": [MAGNET],
         "tags": [TAG],
         "category": [""],
+        "contentLayout": ["Original"],
     }
     assert len([r for r in server.requests if r.url.path.endswith("auth/login")]) == 1
 
@@ -327,6 +328,7 @@ async def test_upload_sends_one_opaque_torrent_file_without_tracker_cookies_or_s
     assert request.headers["content-type"].startswith("multipart/form-data")
     assert request.content.count(b'filename="book.torrent"') == 1
     assert b"fixture torrent bytes" in request.content
+    assert b'name="contentLayout"\r\n\r\nOriginal' in request.content
     assert b"mam_id" not in request.content
 
 
