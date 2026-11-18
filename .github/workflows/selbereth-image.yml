@@ -1,0 +1,88 @@
+name: Publish dewarr-selbereth
+# Personal build of this fork's `selbereth` branch (upstream main plus the local fixes).
+# Every push to that branch publishes ghcr.io/<owner>/dewarr-selbereth for the homelab.
+on:
+  push:
+    branches: [selbereth]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+concurrency:
+  group: dewarr-selbereth
+  cancel-in-progress: true
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    services:
+      postgres:
+        image: postgres:18.3-bookworm
+        env:
+          POSTGRES_USER: book
+          POSTGRES_PASSWORD: book-test-only
+          POSTGRES_DB: container_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U book -d container_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Identify build
+        id: identity
+        run: |
+          base=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')
+          sha=$(git rev-parse HEAD)
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          {
+            echo "image=ghcr.io/${owner}/dewarr-selbereth"
+            echo "version=${base}-selbereth.${GITHUB_RUN_NUMBER}+${sha:0:12}"
+            echo "tag=${base}-selbereth.${GITHUB_RUN_NUMBER}"
+            echo "sha=${sha}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: dewarr-selbereth:candidate
+          provenance: false
+          build-args: |
+            BOOK_BUILD_VERSION=${{ steps.identity.outputs.version }}
+            BOOK_RELEASE_REPOSITORY=logabell/dewarr
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.identity.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.identity.outputs.version }}
+            org.opencontainers.image.description=Dewarr with local fixes (selbereth fork)
+          cache-from: type=gha,scope=dewarr-selbereth
+          cache-to: type=gha,scope=dewarr-selbereth,mode=max,ignore-error=true,timeout=2m
+      - name: Smoke-test startup, migrations and bundled UI
+        env:
+          IMAGE: dewarr-selbereth:candidate
+          EXPECTED_VERSION: ${{ steps.identity.outputs.version }}
+          EXPECTED_ARCH: amd64
+        run: bash scripts/smoke_image.sh
+      - name: Publish
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          TAG: ${{ steps.identity.outputs.tag }}
+        run: |
+          docker tag dewarr-selbereth:candidate "$IMAGE:$TAG"
+          docker tag dewarr-selbereth:candidate "$IMAGE:latest"
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
+          echo "Published \`$IMAGE:$TAG\` (also \`latest\`)" >> "$GITHUB_STEP_SUMMARY"
