@@ -123,7 +123,8 @@ async def test_resume_continues_the_same_transfer_through_a_wrapped_layout(
         attempt = await db.get(DownloadAttempt, failed_source["attempt_id"])
         assert attempt.state == "complete", attempt.message
         inspection = await db.get(DownloadInspection, attempt.inspection_id)
-        assert inspection.relative_path == "Harbor/Harbor.m4b"
+        # The torrent has its own root folder "Harbor"; the client put one more around it.
+        assert inspection.relative_path == "Harbor/Harbor"
     # Nothing was added to the downloader and the original claim still owns the hash.
     assert mock.calls.count("submit") == 1
     assert (await counts(database)) == {"recoveries": 0, "claims": 1, "attempts": 1}
@@ -163,10 +164,14 @@ async def test_a_failure_that_already_triggered_a_replacement_is_not_resumed(
     block_id = await only_block(client)
     response = await client.post(f"{BLOCKLIST}/{block_id}/resume")
     assert response.status_code == 200
-    body = response.json()
-    # Unblocking still happens; the transfer is left exactly as it was.
-    assert body["unblocked"] and body["resumed"] == 0
-    assert "already followed" in body["attempts"][0]["message"]
+    # Unblocking still happens; a recovery that is not "given up" is not even a candidate,
+    # so the transfer and its recovery are left exactly as they were.
+    assert response.json() == {
+        "block_id": block_id,
+        "unblocked": True,
+        "resumed": 0,
+        "attempts": [],
+    }
     async with database() as db:
         assert not (await db.get(ReleaseBlock, UUID(block_id))).active
         assert (await db.get(DownloadRecovery, failed_source["recovery_id"])).state == state
