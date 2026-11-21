@@ -1,6 +1,12 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleAlert, CircleCheck, Download, LoaderCircle } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  Download,
+  LoaderCircle,
+  RefreshCw,
+} from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, result, type Auth } from "../api/client";
 import type { components } from "../api/schema";
@@ -100,6 +106,17 @@ export default function SourceReleaseDownload({
     onSuccess: (operation) => {
       setOperationId(operation.id);
       for (const name of ["requests", "book-sources"])
+        void cache.invalidateQueries({ queryKey: [name] });
+    },
+  });
+  const recheck = useMutation({
+    mutationFn: async () => result(await api.POST("/api/integrations/rescan")),
+    onSuccess: () => {
+      // Give the library a moment to rescan, then let the user try again.
+      key.current = randomUUID();
+      start.reset();
+      setOperationId(undefined);
+      for (const name of ["requests", "book-sources", "quick-add"])
         void cache.invalidateQueries({ queryKey: [name] });
     },
   });
@@ -319,6 +336,33 @@ export default function SourceReleaseDownload({
           {message}
         </p>
       )}
+      {session?.user.role === "admin" &&
+        /already available|already in your library/i.test(message || "") && (
+          <>
+            <button
+              type="button"
+              className="secondary"
+              disabled={recheck.isPending}
+              title="Ask the library to rescan its folders and refresh Dewarr's copy of it. Use this when the book was removed from disk."
+              onClick={() => recheck.mutate()}
+            >
+              <RefreshCw size={16} aria-hidden />{" "}
+              {recheck.isPending ? "Checking files…" : "Check library files"}
+            </button>
+            {recheck.isSuccess && (
+              <p role="status">
+                {recheck.data.problems.length
+                  ? recheck.data.problems.join(". ")
+                  : "Library re-checked. Try this release again in a few seconds."}
+              </p>
+            )}
+            {recheck.error && (
+              <p className="error" role="alert">
+                {recheck.error.message}
+              </p>
+            )}
+          </>
+        )}
       {inspect.error && (
         <p className="error" role="alert">
           {inspect.error.message}

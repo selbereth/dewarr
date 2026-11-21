@@ -1,6 +1,7 @@
+import asyncio
 from datetime import UTC, datetime
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -266,6 +267,73 @@ async def sync_connection(
     record.next_sync_at = datetime.now(UTC)
     await db.commit()
     return operation
+
+
+class RescanResult(BaseModel):
+    scanned: int
+    synced: int
+    problems: list[str]
+
+
+@router.post("/rescan", response_model=RescanResult)
+async def rescan_connections(admin: Admin, db: Database):
+    """Ask each library to re-read its folders, then refresh dewarr's copy of the inventory.
+
+    Used when a book was removed from disk outside dewarr and dewarr still treats it
+    as available. Per-connection failures are reported, not raised.
+    """
+    if get_settings().recovery_mode:
+        raise HTTPException(409, "Library checks are paused for recovery")
+    records = (
+        await db.scalars(
+            select(Integration).where(
+                Integration.deleted_at.is_(None),
+                Integration.owner_id.is_(None),
+                Integration.enabled.is_(True),
+                Integration.kind.in_(["audiobookshelf", "grimmory"]),
+            )
+        )
+    ).all()
+    targets = [
+        (
+            record.id,
+            record.name,
+            record.kind,
+            record.base_url,
+            decrypt_secrets(record.encrypted_secrets),
+            "scan" in record.capabilities.get("operations", []),
+        )
+        for record in records
+    ]
+    await db.rollback()
+    scanned, synced, problems = 0, 0, []
+    scan_started = False
+    for integration_id, name, kind, endpoint, secrets, can_scan in targets:
+        if can_scan:
+            client_type = Grimmory if kind == "grimmory" else Audiobookshelf
+            credential = secrets if kind == "grimmory" else secrets["token"]
+            try:
+                async with client_type(endpoint, credential) as client:
+                    for library in await client.libraries():
+                        await client.scan(library["id"])
+                        scanned += 1
+                        scan_started = True
+            except AdapterError as error:
+                problems.append(f"{name}: scan failed ({error})")
+        if scan_started:
+            await asyncio.sleep(5)  # let the library finish reading its folders
+            scan_started = False
+        try:
+            await enqueue_sync(db, admin.id, integration_id, f"rescan-{uuid4()}")
+            record = await db.get(Integration, integration_id)
+            if record:
+                record.next_sync_at = datetime.now(UTC)
+            await db.commit()
+            synced += 1
+        except HTTPException as error:
+            await db.rollback()
+            problems.append(f"{name}: {error.detail}")
+    return RescanResult(scanned=scanned, synced=synced, problems=problems)
 
 
 @router.get("/{integration_id}/sync/{operation_id}", response_model=OperationView)

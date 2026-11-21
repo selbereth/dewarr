@@ -2887,6 +2887,29 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/integrations/rescan": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Rescan Connections
+     * @description Ask each library to re-read its folders, then refresh dewarr's copy of the inventory.
+     *
+     *     Used when a book was removed from disk outside dewarr and dewarr still treats it
+     *     as available. Per-connection failures are reported, not raised.
+     */
+    post: operations["rescan_connections_api_integrations_rescan_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/integrations/{integration_id}/sync/{operation_id}": {
     parameters: {
       query?: never;
@@ -13153,6 +13176,15 @@ export interface components {
       description: string;
       release_policy?: components["schemas"]["ProfileSnapshot"] | null;
     };
+    /** RescanResult */
+    RescanResult: {
+      /** Scanned */
+      scanned: number;
+      /** Synced */
+      synced: number;
+      /** Problems */
+      problems: string[];
+    };
     /** ResumeAttemptView */
     ResumeAttemptView: {
       /**
@@ -21287,6 +21319,26 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  rescan_connections_api_integrations_rescan_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RescanResult"];
         };
       };
     };

@@ -9458,6 +9458,28 @@
         }
       }
     },
+    "/api/integrations/rescan": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Rescan Connections",
+        "description": "Ask each library to re-read its folders, then refresh dewarr's copy of the inventory.\n\nUsed when a book was removed from disk outside dewarr and dewarr still treats it\nas available. Per-connection failures are reported, not raised.",
+        "operationId": "rescan_connections_api_integrations_rescan_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescanResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/integrations/{integration_id}/sync/{operation_id}": {
       "get": {
         "tags": [
@@ -38166,6 +38188,32 @@
           "description"
         ],
         "title": "RequestView"
+      },
+      "RescanResult": {
+        "properties": {
+          "scanned": {
+            "type": "integer",
+            "title": "Scanned"
+          },
+          "synced": {
+            "type": "integer",
+            "title": "Synced"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problems"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scanned",
+          "synced",
+          "problems"
+        ],
+        "title": "RescanResult"
       },
       "ResumeAttemptView": {
         "properties": {
